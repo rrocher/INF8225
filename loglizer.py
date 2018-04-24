@@ -16,6 +16,8 @@ import tensorflow as tf
 from tensorflow.contrib import rnn
 import random
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 logs_path = './rnn_words'
 writer = tf.summary.FileWriter(logs_path)
@@ -183,8 +185,8 @@ def build_dataset(words):
 
 # Parameters
 learning_rate = 0.001
-training_iters = 20000
-display_step = 1000
+training_iters = 30000
+display_step = 100
 n_input = 3
 
 # number of units in RNN cell
@@ -194,12 +196,10 @@ def RNN(x, weights, biases):
     # reshape to [1, n_input]
     x = tf.reshape(x, [-1, n_input])
 
-    # Generate a n_input-element sequence of inputs
-    # (eg. [had] [a] [general] -> [20] [6] [33])
     x = tf.split(x, n_input,1)
 
-    # 1-layer LSTM with n_hidden units.
-    rnn_cell = rnn.BasicLSTMCell(n_hidden)
+    # 3-layer LSTM with n_hidden units.
+    rnn_cell = rnn.MultiRNNCell([rnn.BasicLSTMCell(n_hidden),rnn.BasicLSTMCell(n_hidden),rnn.BasicLSTMCell(n_hidden)])
 
     # generate prediction
     outputs, states = rnn.static_rnn(rnn_cell, x, dtype=tf.float32)
@@ -228,7 +228,8 @@ def train(x, y,training_data, dictionary, reverse_dictionary):
     # Model evaluation
     correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-
+    avg_losses = []
+    avg_accuracies = []
     # Initializing the variables
     init = tf.global_variables_initializer()
     # Launch the graph
@@ -259,46 +260,48 @@ def train(x, y,training_data, dictionary, reverse_dictionary):
             loss_total += loss
             acc_total += acc
             if (step+1) % display_step == 0:
-                # print("Iter= " + str(step+1) + ", Average Loss= " + \
-                #       "{:.6f}".format(loss_total/display_step) + ", Average Accuracy= " + \
-                #       "{:.2f}%".format(100*acc_total/display_step))
+                avg_losses.append(loss_total)
+                avg_accuracies.append(acc_total)
                 acc_total = 0
                 loss_total = 0
                 symbols_in = [training_data[i] for i in range(offset, offset + n_input)]
                 symbols_out = training_data[offset + n_input]
                 symbols_out_pred = reverse_dictionary[int(tf.argmax(onehot_pred, 1).eval())]
-                # print("%s - [%s] vs [%s]" % (symbols_in,symbols_out,symbols_out_pred))
             step += 1
             offset += (n_input+1)
+        plt.figure("Training_1")
+        plt.subplot(211)
+        plt.plot(avg_losses)
+        plt.title('Losses')
+
+        plt.subplot(212)
+        plt.plot(avg_accuracies)
+        plt.title('Accuracies')
+        plt.savefig("./Training_1")
         print("Optimization Finished!")
         return pred
     
 def test(x, pred, loginputs, dictionary, reverse_dictionary):
-    print("Test***")
-    print(x)
-    print(y)
+    # print("Test***")
+    # print(x)
+    # print(y)
+    possible_logs = []
     # Initializing the variables
     init = tf.global_variables_initializer()
     with tf.Session() as session:
-        
+        session.run(tf.global_variables_initializer())
         if len(loginputs) != n_input:
             print("Invalid")
             return
         try:
-            print("Trying:",len(loginputs))
-            print("Trying1:",str(loginputs[0]) in dictionary)
-            print("Trying2:",str(loginputs[1]) in dictionary)
-            print("Trying3:",str(loginputs[2]) in dictionary)
             symbols_in_keys = [dictionary[str(loginputs[i])] for i in range(len(loginputs))]
-            print(symbols_in_keys)
             keys = np.reshape(np.array(symbols_in_keys), [-1, n_input, 1])
-            print(keys)
             onehot_pred = session.run(pred, feed_dict={x: keys})
-            print(onehot_pred)
-            onehot_pred_index = int(tf.argmax(onehot_pred, 1).eval())
-            # sentence = "%s %s" % (sentence,reverse_dictionary[onehot_pred_index])
-            print("Result log:")
-            print(reverse_dictionary[onehot_pred_index])
+            tops = tf.nn.top_k(onehot_pred,10).indices.eval()[0]
+            for cnt in tops:
+                onehot_pred_index = int(cnt)
+                possible_logs.append(reverse_dictionary[onehot_pred_index])
+            return possible_logs
         except Exception as inst:
             print("Exception:",inst)
         
@@ -312,5 +315,23 @@ if __name__ == '__main__':
 
     pred = train(x,y,lcsseqs, dictionary, reverse_dictionary)
     lcsmap, testsequences = testMainProcess(lcsmap, 'hadoop.test.log', 'text',offset=2 )
+    
+            
     lcstestseqs  = [ ' '.join(x.lcs_seq) for x in testsequences]
-    test(x,pred, lcstestseqs[:3], dictionary, reverse_dictionary)
+    logs = []
+    anomalies = 0
+    successes = 0
+    for l1,l2,l3,totest in zip(*[iter(lcstestseqs)]*4):
+        logs.append(l1)
+        logs.append(l2)
+        logs.append(l3)
+        possible_logs = test(x, pred, logs, dictionary, reverse_dictionary)
+        if possible_logs is None or len(possible_logs) == 0:
+            continue
+        if totest not in possible_logs:
+            print("Anomaly:",totest)
+            anomalies = anomalies +1
+        else:
+            successes = successes +1
+        logs = []
+    print("Anomalies:", anomalies)
