@@ -322,6 +322,7 @@ if __name__ == '__main__':
     anomalies = 0
     successes = 0
     for l1,l2,l3,totest in zip(*[iter(lcstestseqs)]*4):
+        logs = []
         logs.append(l1)
         logs.append(l2)
         logs.append(l3)
@@ -333,5 +334,4 @@ if __name__ == '__main__':
             anomalies = anomalies +1
         else:
             successes = successes +1
-        logs = []
     print("Anomalies:", anomalies)
