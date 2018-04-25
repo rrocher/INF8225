@@ -185,8 +185,8 @@ def build_dataset(words):
 
 # Parameters
 learning_rate = 0.001
-training_iters = 30000
-display_step = 100
+training_iters = 50000
+display_step = 1000
 n_input = 3
 
 # number of units in RNN cell
@@ -293,17 +293,22 @@ def test(x, pred, loginputs, dictionary, reverse_dictionary):
         if len(loginputs) != n_input:
             print("Invalid")
             return
-        try:
-            symbols_in_keys = [dictionary[str(loginputs[i])] for i in range(len(loginputs))]
-            keys = np.reshape(np.array(symbols_in_keys), [-1, n_input, 1])
-            onehot_pred = session.run(pred, feed_dict={x: keys})
-            tops = tf.nn.top_k(onehot_pred,10).indices.eval()[0]
-            for cnt in tops:
-                onehot_pred_index = int(cnt)
+        symbols_in_keys = []
+        for i in range(len(loginputs)):
+            if str(loginputs[i]) in dictionary:
+                symbols_in_keys.append(dictionary[str(loginputs[i])]) 
+            else:
+                symbols_in_keys.append(0)
+                 
+        keys = np.reshape(np.array(symbols_in_keys), [-1, n_input, 1])
+        onehot_pred = session.run(pred, feed_dict={x: keys})
+        tops = tf.nn.top_k(onehot_pred,10).indices.eval()[0]
+        for idx in tops:
+            onehot_pred_index = int(idx)
+            if onehot_pred_index in reverse_dictionary:
                 possible_logs.append(reverse_dictionary[onehot_pred_index])
-            return possible_logs
-        except Exception as inst:
-            print("Exception:",inst)
+        return possible_logs
+        
         
 if __name__ == '__main__':
     lcsmap, sequences = mainProcess('hadoop.log', 'text',offset=2 )
@@ -327,6 +332,8 @@ if __name__ == '__main__':
         logs.append(l2)
         logs.append(l3)
         possible_logs = test(x, pred, logs, dictionary, reverse_dictionary)
+        print("Possible logs:", possible_logs)
+        print("To test:", totest)
         if possible_logs is None or len(possible_logs) == 0:
             continue
         if totest not in possible_logs:
@@ -335,3 +342,4 @@ if __name__ == '__main__':
         else:
             successes = successes +1
     print("Anomalies:", anomalies)
+    print("Successes:", successes)
